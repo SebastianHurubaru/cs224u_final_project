@@ -1,5 +1,5 @@
 """
-Video data pipeline
+Financial statement data pipeline
 
 Author:
     Sebastian Hurubaru (hurubaru@stanford.edu)
@@ -10,9 +10,12 @@ import tensorflow_text as text
 
 import os
 import json
-from edgar import Edgar, Company, TXTML
+from sec_edgar_downloader import Downloader
 
 import tensorflow_datasets.public_api as tfds
+
+from parsers import FinancialReportParser
+
 
 class FinancialStatementDatasetBuilder(tfds.core.GeneratorBasedBuilder):
 
@@ -25,9 +28,11 @@ class FinancialStatementDatasetBuilder(tfds.core.GeneratorBasedBuilder):
 
         super(tfds.core.GeneratorBasedBuilder, self).__init__()
 
-        self.edgar = Edgar()
-        self.tokenizer = text.WhitespaceTokenizer()
+        self.dl = Downloader(self.args.download_path)
 
+        self.parser = FinancialReportParser()
+
+        self.tokenizer = text.WhitespaceTokenizer()
 
     def _info(self):
 
@@ -37,13 +42,13 @@ class FinancialStatementDatasetBuilder(tfds.core.GeneratorBasedBuilder):
             description=("Financial statements data."),
 
             features=tfds.features.FeaturesDict({
-                "document": tfds.features.Tensor(
-                        dtype=tf.string, shape=()
-                    ),
+                "documents": tfds.features.Tensor(
+                    dtype=tf.string, shape=(self.args.number_of_periods,)
+                ),
                 "label": tfds.features.ClassLabel(num_classes=2),
             }),
 
-            supervised_keys=("document", "label"),
+            supervised_keys=("documents", "label"),
 
             homepage="https://xxx",
 
@@ -92,39 +97,64 @@ class FinancialStatementDatasetBuilder(tfds.core.GeneratorBasedBuilder):
 
         for company_info, label in dataset:
 
-            cik = company_info['cik'].numpy()[0].decode('utf-8')
+            ciks = company_info['cik'].numpy()[0].decode('utf-8').split(';')
+            ciks.sort(reverse=True, key=lambda cik: int(cik))
+            end_date = company_info['end_date'].numpy()[0].decode('utf-8')
 
             try:
-                company_name = self.edgar.get_company_name_by_cik(cik)
 
-                company = Company(company_name, cik)
-                document = company.get_10K()
-                document_text = TXTML.parse_full_10K(document)
+                documents = []
 
-                if document_text == '':
-                    raise Exception(f'10K document for cik {cik} is empty!')
+                # For multiple CIKs take in the descending order the last args.number_of_periods 10-K reports
+                for cik in ciks:
+
+                    cik_folder = os.path.join(
+                        os.path.expanduser(self.args.download_path),
+                        'sec_edgar_filings',
+                        cik.strip().lstrip("0"),
+                        '10-K')
+
+                    # Download if and only if the directories do not exist
+                    if (os.path.exists(cik_folder) is False):
+                        self.dl.get("10-K",
+                                    cik,
+                                    before_date=end_date,
+                                    num_filings_to_download=self.args.number_of_periods)
+
+                    for r, d, f in os.walk(cik_folder):
+                        for file in f:
+                            if '.txt' in file:
+                                documents.append(
+                                    tf.convert_to_tensor(
+                                        self.parser.parse_10K_txt_file(os.path.join(r, file)),
+                                        dtype=tf.string))
+
+                if len(documents) < self.args.number_of_periods:
+                    raise Exception(f'Could not retrieve {self.args.number_of_periods} 10-K records for {cik}')
+
                 yield cik, {
-                    'document': tf.convert_to_tensor(document_text, dtype=tf.string),
+                    'documents': tf.stack(documents)[:self.args.number_of_periods],
                     'label': label.numpy()[0]
                 }
 
-            except:
-                print(f'Exception occurred for cik {cik}')
+            except Exception as e:
+                print(f'Exception occurred for cik {cik}: {e}')
 
     def _process_text_map_fn(self, text, label):
 
         processed_text, label = tf.py_function(self._process_text,
-                                             inp=[text, label],
-                                             Tout=(tf.int64, tf.int64))
+                                               inp=[text, label],
+                                               Tout=(tf.int64, tf.int64))
 
         return processed_text, label
 
     def _process_text(self, text, label):
 
         # TODO: preprocess the text. Toy case to return just the tokens number
+
+        print(f'text shape: {text.shape}')
+        for i in range(text.shape[0]):
+            print(f'10-k Section 7: {text[i]}')
         tokens_number = self.tokenizer.tokenize(text).shape[0]
 
         return (tokens_number, label)
-
-
-
