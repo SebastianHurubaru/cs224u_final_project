@@ -102,21 +102,13 @@ def add_common_args(parser):
                         type=str,
                         default='dataset.csv')
 
-    parser.add_argument('--frames_per_second',
+    parser.add_argument('--number_of_periods',
                         type=int,
-                        default='10')
+                        default=3)
 
-    parser.add_argument('--frame_height',
-                        type=int,
-                        default='75')
-
-    parser.add_argument('--frame_width',
-                        type=int,
-                        default='75')
-
-    parser.add_argument('--frame_channels',
-                        type=int,
-                        default='3')
+    parser.add_argument('--download_path',
+                        type=str,
+                        default='~')
 
     parser.add_argument('--model',
                         type=str,
