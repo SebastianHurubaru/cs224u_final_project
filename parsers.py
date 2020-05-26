@@ -7,7 +7,10 @@ import re # regex
 
 from typing import List
 from bs4 import BeautifulSoup # HTMl parser
-from sec_edgar_downloader import Downloader 
+from sec_edgar_downloader import Downloader
+
+from lxml import html
+from edgar import Edgar, TXTML, Company
 
 class FinancialReportParser(object):
     
@@ -99,6 +102,68 @@ class FinancialReportParser(object):
                 
             parsed_full_10K_list.append(text)
         return parsed_full_10K_list
+
+class FinancialReportParserUsingEdgar(FinancialReportParser):
+
+    def parse_10K_txt_file(self, txt_file_path: str, should_parse_item_7_only: bool = True) -> str:
+        """
+        Parses a raw 10-K .txt file.
+
+        Parameters
+        ----------
+        txt_file_path : str
+            The path to the .txt file.
+            For example => 'data\\sec_filings\\AAPL\\10-K\\0000320193-17-000070.txt'
+
+        Returns
+        ----------
+        A full text containing the text required.
+
+        """
+        raw_10K_html_text = None
+        with open(txt_file_path) as f:
+            raw_10K_html_text = f.read()
+
+        # parse the full 10K
+        raw_10K_text = self.parse_full_10K(html.fromstring(raw_10K_html_text))
+
+        # Check if we want to only parse the text that is in Item 7 (MD&A)
+        if should_parse_item_7_only:
+            return self.parse_item_7_only(raw_10K_text)
+        else:
+            return raw_10K_text
+
+
+    def parse_item_7_only(self, raw_10K_text: str) -> str:
+        """
+        Parses raw text and
+        returns only the Item 7 (MD&A) content.
+
+        We accomplish this by using a Regex ato extract the text between "Item 7." and "Item 8."
+
+        """
+        max_size = 0
+        raw_7K_text = ''
+
+        pattern = '[\\n\\r\\s]+(Item[\\n\\r\\s]?7\\..+?)[\\n\\r\\s]+Item[\\n\\r\\s]?8\\.'
+        for x in re.finditer(pattern, raw_10K_text, flags=re.S | re.IGNORECASE):
+            if len(x.group(1)) > max_size:
+                raw_7K_text = x.group(1)
+                max_size = len(x.group(1))
+
+        if not raw_7K_text:
+            raise Exception(f'7K section is empty!')
+
+        return raw_7K_text
+
+    def parse_full_10K(self, raw_10K_html_text: str) -> str:
+        """
+        Parses raw html text and returns the entire 10-K content
+
+        """
+        parsed_full_10K = TXTML.parse_full_10K(raw_10K_html_text)
+
+        return parsed_full_10K
 
     
 def main():

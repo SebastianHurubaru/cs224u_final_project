@@ -14,7 +14,7 @@ from sec_edgar_downloader import Downloader
 
 import tensorflow_datasets.public_api as tfds
 
-from parsers import FinancialReportParser
+from parsers import FinancialReportParserUsingEdgar
 
 
 class FinancialStatementDatasetBuilder(tfds.core.GeneratorBasedBuilder):
@@ -30,7 +30,7 @@ class FinancialStatementDatasetBuilder(tfds.core.GeneratorBasedBuilder):
 
         self.dl = Downloader(self.args.download_path)
 
-        self.parser = FinancialReportParser()
+        self.parser = FinancialReportParserUsingEdgar()
 
         self.tokenizer = text.WhitespaceTokenizer()
 
@@ -152,9 +152,9 @@ class FinancialStatementDatasetBuilder(tfds.core.GeneratorBasedBuilder):
 
         # TODO: preprocess the text. Toy case to return just the tokens number
 
-        print(f'text shape: {text.shape}')
-        for i in range(text.shape[0]):
-            print(f'10-k Section 7: {text[i]}')
+        # print(f'text shape: {text.shape}')
+        # for i in range(text.shape[0]):
+        #     print(f'10-k Section 7: {text[i]}')
         tokens_number = self.tokenizer.tokenize(text).shape[0]
 
         return (tokens_number, label)
