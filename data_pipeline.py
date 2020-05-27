@@ -6,8 +6,8 @@ Author:
 """
 
 import tensorflow as tf
-import tensorflow_text as text
 
+import numpy as np
 import os
 import json
 from sec_edgar_downloader import Downloader
@@ -15,6 +15,7 @@ from sec_edgar_downloader import Downloader
 import tensorflow_datasets.public_api as tfds
 
 from parsers import FinancialReportParserUsingEdgar
+from text_processors import TextProcessor
 
 
 class FinancialStatementDatasetBuilder(tfds.core.GeneratorBasedBuilder):
@@ -31,8 +32,8 @@ class FinancialStatementDatasetBuilder(tfds.core.GeneratorBasedBuilder):
         self.dl = Downloader(self.args.download_path)
 
         self.parser = FinancialReportParserUsingEdgar()
-
-        self.tokenizer = text.WhitespaceTokenizer()
+        
+        self.text_processor = TextProcessor()
 
     def _info(self):
 
@@ -141,20 +142,20 @@ class FinancialStatementDatasetBuilder(tfds.core.GeneratorBasedBuilder):
                 print(f'Exception occurred for cik {cik}: {e}')
 
     def _process_text_map_fn(self, text, label):
-
         processed_text, label = tf.py_function(self._process_text,
                                                inp=[text, label],
                                                Tout=(tf.int64, tf.int64))
-
         return processed_text, label
 
     def _process_text(self, text, label):
+        # Decode the text from the Tensor
+        decoded_text_list = tf.gather(text, 0).numpy().decode('utf-8', 'ignore')
+        decoded_text = " ".join(decoded_text_list.split())
+        
+        # Process the text
+        processed_text_str = self.text_processor.process_text(decoded_text)
+        
+        # Convert the str back into a tensor
+        processed_text_tensor = tf.convert_to_tensor(processed_text_str, dtype=tf.string)
 
-        # TODO: preprocess the text. Toy case to return just the tokens number
-
-        # print(f'text shape: {text.shape}')
-        # for i in range(text.shape[0]):
-        #     print(f'10-k Section 7: {text[i]}')
-        tokens_number = self.tokenizer.tokenize(text).shape[0]
-
-        return (tokens_number, label)
+        return (processed_text_tensor, label)
