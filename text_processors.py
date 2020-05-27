@@ -13,7 +13,7 @@ import re
 class TextProcessor(object):
 
 	def __init__(self):
-		pass
+		super.__init__()
 
 	def process_text(self, text: tf.Tensor) -> tf.Tensor:
 		"""
