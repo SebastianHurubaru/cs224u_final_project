@@ -6,8 +6,8 @@ Author:
 """
 
 import tensorflow as tf
-import tensorflow_text as text
 
+import numpy as np
 import os
 import json
 from sec_edgar_downloader import Downloader
@@ -15,7 +15,10 @@ from sec_edgar_downloader import Downloader
 import tensorflow_datasets.public_api as tfds
 
 from parsers import FinancialReportParserUsingEdgar
+from text_processors import TextProcessor, SentenceBasedTextProcessor
 
+#for debugging
+# import pydevd
 
 class FinancialStatementDatasetBuilder(tfds.core.GeneratorBasedBuilder):
 
@@ -31,8 +34,8 @@ class FinancialStatementDatasetBuilder(tfds.core.GeneratorBasedBuilder):
         self.dl = Downloader(self.args.download_path)
 
         self.parser = FinancialReportParserUsingEdgar()
-
-        self.tokenizer = text.WhitespaceTokenizer()
+        
+        self.text_processor = SentenceBasedTextProcessor(args)
 
     def _info(self):
 
@@ -141,20 +144,17 @@ class FinancialStatementDatasetBuilder(tfds.core.GeneratorBasedBuilder):
                 print(f'Exception occurred for cik {cik}: {e}')
 
     def _process_text_map_fn(self, text, label):
-
         processed_text, label = tf.py_function(self._process_text,
                                                inp=[text, label],
                                                Tout=(tf.int64, tf.int64))
-
         return processed_text, label
 
     def _process_text(self, text, label):
 
-        # TODO: preprocess the text. Toy case to return just the tokens number
+        # To allow debugging in the combined static eager mode
+        # pydevd.settrace(suspend=True)
 
-        # print(f'text shape: {text.shape}')
-        # for i in range(text.shape[0]):
-        #     print(f'10-k Section 7: {text[i]}')
-        tokens_number = self.tokenizer.tokenize(text).shape[0]
+        # Process the text
+        processed_text = self.text_processor.process_text(text)
 
-        return (tokens_number, label)
+        return (processed_text, label)
