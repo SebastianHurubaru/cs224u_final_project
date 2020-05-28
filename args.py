@@ -124,6 +124,14 @@ def add_common_args(parser):
                         type=bool,
                         default=False)
 
+    parser.add_argument('--max_sentence_length',
+                        type=int,
+                        default=512)
+
+    parser.add_argument('--max_document_size',
+                        type=int,
+                        default=250)
+
 def add_train_test_args(parser):
     """
     Add arguments common to train.py and test.py
@@ -152,7 +160,7 @@ def add_train_test_args(parser):
 
     parser.add_argument('--hidden_size',
                         type=int,
-                        default=300,
+                        default=1024,
                         help='Number of features in the hidden layers.')
 
     parser.add_argument('--drop_prob',

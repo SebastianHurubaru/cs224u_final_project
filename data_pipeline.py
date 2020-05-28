@@ -15,8 +15,10 @@ from sec_edgar_downloader import Downloader
 import tensorflow_datasets.public_api as tfds
 
 from parsers import FinancialReportParserUsingEdgar
-from text_processors import TextProcessor
+from text_processors import TextProcessor, SentenceBasedTextProcessor
 
+#for debugging
+# import pydevd
 
 class FinancialStatementDatasetBuilder(tfds.core.GeneratorBasedBuilder):
 
@@ -33,7 +35,7 @@ class FinancialStatementDatasetBuilder(tfds.core.GeneratorBasedBuilder):
 
         self.parser = FinancialReportParserUsingEdgar()
         
-        self.text_processor = TextProcessor()
+        self.text_processor = SentenceBasedTextProcessor(args)
 
     def _info(self):
 
@@ -148,14 +150,11 @@ class FinancialStatementDatasetBuilder(tfds.core.GeneratorBasedBuilder):
         return processed_text, label
 
     def _process_text(self, text, label):
-        # Decode the text from the Tensor
-        decoded_text_list = tf.gather(text, 0).numpy().decode('utf-8', 'ignore')
-        decoded_text = " ".join(decoded_text_list.split())
-        
-        # Process the text
-        processed_text_str = self.text_processor.process_text(decoded_text)
-        
-        # Convert the str back into a tensor
-        processed_text_tensor = tf.convert_to_tensor(processed_text_str, dtype=tf.string)
 
-        return (processed_text_tensor, label)
+        # To allow debugging in the combined static eager mode
+        # pydevd.settrace(suspend=True)
+
+        # Process the text
+        processed_text = self.text_processor.process_text(text)
+
+        return (processed_text, label)
