@@ -65,19 +65,6 @@ def periodically_train_task():
     tf.summary.scalar('train_accuracy', train_accuracy.result() * 100, step=checkpoint.step.numpy())
 
 
-def get_model_metrics():
-    return [
-        keras.metrics.TruePositives(name='tp'),
-        keras.metrics.FalsePositives(name='fp'),
-        keras.metrics.TrueNegatives(name='tn'),
-        keras.metrics.FalseNegatives(name='fn'),
-        keras.metrics.BinaryAccuracy(name='accuracy'),
-        keras.metrics.Precision(name='precision'),
-        keras.metrics.Recall(name='recall'),
-        keras.metrics.AUC(name='auc'),
-    ]
-
-
 if __name__ == '__main__':
 
     args = get_train_args()
@@ -139,7 +126,6 @@ if __name__ == '__main__':
 
         # Create the model, optimizer and checkpoint under 'strategy_scope'
         model = create_model(args.model)(args=args, dynamic=True)
-        # model.compile(metrics=get_model_metrics())
 
         # Create the optimizer dynamically
         if args.use_lr_scheduler is True:

@@ -11,7 +11,6 @@ def create_model(model_name):
         return BaselineModel
     elif model_name == 'lstm':
         return LSTMModel
-        # return Linear
 
 class LSTMModel(Model):
 
