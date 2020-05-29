@@ -27,8 +27,12 @@ def train_step(inputs):
 
     gradients = tape.gradient(loss, model.trainable_variables)
     optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+    prediction_indexes = tf.argmax(predictions, axis=1).numpy()
 
     train_accuracy.update_state(labels, predictions)
+    train_recall.update_state(labels, prediction_indexes)
+    train_precision.update_state(labels, prediction_indexes)
+    train_auc.update_state(labels, prediction_indexes)
 
     return loss
 
@@ -37,10 +41,14 @@ def eval_step(inputs):
     frames, labels = inputs
 
     predictions = model(frames, training=False)
+    prediction_indexes = tf.argmax(predictions, axis=1).numpy()
     t_loss = loss_object(labels, predictions)
 
     dev_loss.update_state(t_loss)
     dev_accuracy.update_state(labels, predictions)
+    dev_recall.update_state(labels, prediction_indexes)
+    dev_precision.update_state(labels, prediction_indexes)
+    dev_auc.update_state(labels, prediction_indexes)
 
 
 def distributed_train_step(dataset_inputs):
@@ -61,6 +69,9 @@ def periodically_train_task():
     # Display metrics on tensorboard
     tf.summary.scalar('train_loss', total_loss / num_batches, step=checkpoint.step.numpy())
     tf.summary.scalar('train_accuracy', train_accuracy.result() * 100, step=checkpoint.step.numpy())
+    tf.summary.scalar('train_recall', train_recall.result() * 100, step=checkpoint.step.numpy())
+    tf.summary.scalar('train_precision', train_precision.result() * 100, step=checkpoint.step.numpy())
+    tf.summary.scalar('train_auc', train_auc.result() * 100, step=checkpoint.step.numpy())
 
 
 if __name__ == '__main__':
@@ -119,8 +130,22 @@ if __name__ == '__main__':
 
         train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
             name='train_accuracy')
+        train_recall = tf.keras.metrics.Recall(
+            name='train_recall')
+        train_precision = tf.keras.metrics.Precision(
+            name='train_precision')
+        train_auc = tf.keras.metrics.AUC(
+            name='train_auc')
+
         dev_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
             name='dev_accuracy')
+        dev_recall = tf.keras.metrics.Recall(
+            name='dev_recall')
+        dev_precision = tf.keras.metrics.Precision(
+            name='dev_precision')
+        dev_auc = tf.keras.metrics.AUC(
+            name='dev_auc'
+        )
 
         # Create the model, optimizer and checkpoint under 'strategy_scope'
         model = create_model(args.model)(args=args, dynamic=True)
@@ -143,7 +168,7 @@ if __name__ == '__main__':
 
         optimizer = tf.keras.optimizers.get(config)
 
-        # Create the chekpoint manager
+        # Create the checkpoint manager
         checkpoint = tf.train.Checkpoint(step=tf.Variable(1), optimizer=optimizer, model=model)
         checkpoint_manager = tf.train.CheckpointManager(checkpoint, run_dir, max_to_keep=args.max_checkpoints)
 
@@ -169,10 +194,20 @@ if __name__ == '__main__':
 
             tf.summary.scalar('dev_loss', dev_loss.result(), step=checkpoint.step.numpy())
             tf.summary.scalar('dev_accuracy', dev_accuracy.result() * 100, step=checkpoint.step.numpy())
+            tf.summary.scalar('dev_recall', dev_recall.result() * 100, step=checkpoint.step.numpy())
+            tf.summary.scalar('dev_precision', dev_precision.result() * 100, step=checkpoint.step.numpy())
+            tf.summary.scalar('dev_auc', dev_auc.result() * 100, step=checkpoint.step.numpy())
 
             dev_loss.reset_states()
             train_accuracy.reset_states()
+            train_recall.reset_states()
+            train_precision.reset_states()
+            train_auc.reset_states()
+
             dev_accuracy.reset_states()
+            dev_recall.reset_states()
+            dev_precision.reset_states()
+            dev_auc.reset_states()
 
             print(f'Finished epoch {epoch+1} ...')
 
