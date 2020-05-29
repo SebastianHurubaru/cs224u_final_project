@@ -28,15 +28,12 @@ class LSTMModel(Model):
     def call(self, x):
         x = tf.dtypes.cast(x, tf.float32)
         batch_size = x.shape[0]
-        print("x.shape: {}".format(x.shape))
 
-        sent_emb_reshaped = tf.reshape(x, [batch_size, -1, 512])
+        # X needs to be a 3-dimensional tensor before we can feed it through an LSTM
+        x_reshaped = tf.reshape(x, [batch_size, -1, x.shape[-1]])
 
-        print("sent_emb_reshaped.shape: {}".format(sent_emb_reshaped.shape))
-
-        h = self.dropout(self.rnn(sent_emb_reshaped))
-
-        print("h.shape: {}".format(h.shape))
+        # Feed X through the LSTM
+        h = self.dropout(self.rnn(x_reshaped))
 
         out = self.out(h)
 
