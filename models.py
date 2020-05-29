@@ -21,7 +21,7 @@ class LSTMModel(Model):
 
         self.rnn = LSTM(self.args.hidden_size)
 
-        self.out = Dense(2, activation='sigmoid')
+        self.out = Dense(2)
 
         self.dropout = Dropout(self.args.drop_prob)
 
