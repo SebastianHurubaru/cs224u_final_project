@@ -112,7 +112,7 @@ def add_common_args(parser):
 
     parser.add_argument('--model',
                         type=str,
-                        choices=['baseline'],
+                        choices=['baseline', 'lstm'],
                         default='baseline')
 
     parser.add_argument('--save_dir',

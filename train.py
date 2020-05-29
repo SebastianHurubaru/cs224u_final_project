@@ -10,6 +10,8 @@ import tensorflow_datasets as tfds
 import sys
 import datetime
 
+from tensorflow.python import keras
+
 from args import get_train_args
 from data_pipeline import FinancialStatementDatasetBuilder
 
@@ -63,6 +65,19 @@ def periodically_train_task():
     tf.summary.scalar('train_accuracy', train_accuracy.result() * 100, step=checkpoint.step.numpy())
 
 
+def get_model_metrics():
+    return [
+        keras.metrics.TruePositives(name='tp'),
+        keras.metrics.FalsePositives(name='fp'),
+        keras.metrics.TrueNegatives(name='tn'),
+        keras.metrics.FalseNegatives(name='fn'),
+        keras.metrics.BinaryAccuracy(name='accuracy'),
+        keras.metrics.Precision(name='precision'),
+        keras.metrics.Recall(name='recall'),
+        keras.metrics.AUC(name='auc'),
+    ]
+
+
 if __name__ == '__main__':
 
     args = get_train_args()
@@ -88,19 +103,19 @@ if __name__ == '__main__':
 
     GLOBAL_BATCH_SIZE = args.batch_size * strategy.num_replicas_in_sync
 
-    ds_train = builder.as_dataset(split=tfds.Split.TRAIN, as_supervised=True)\
-        .map(builder._process_text_map_fn)\
+    ds_train = builder.as_dataset(split=tfds.Split.TRAIN, as_supervised=True) \
+        .map(builder._process_text_map_fn) \
         .batch(GLOBAL_BATCH_SIZE)
-    ds_dev = builder.as_dataset(split=tfds.Split.VALIDATION, as_supervised=True)\
-        .map(builder._process_text_map_fn)\
+    ds_dev = builder.as_dataset(split=tfds.Split.VALIDATION, as_supervised=True) \
+        .map(builder._process_text_map_fn) \
         .batch(GLOBAL_BATCH_SIZE)
 
     # distribute the dataset needed by the CentralStorageStrategy strategy
     ds_train = strategy.experimental_distribute_dataset(dataset=ds_train)
     ds_dev = strategy.experimental_distribute_dataset(dataset=ds_dev)
 
-    writer = tf.summary.create_file_writer(run_dir)
-    writer.set_as_default()
+    # writer = tf.summary.create_file_writer(run_dir)
+    # writer.set_as_default()
 
     with strategy.scope():
 
@@ -124,6 +139,7 @@ if __name__ == '__main__':
 
         # Create the model, optimizer and checkpoint under 'strategy_scope'
         model = create_model(args.model)(args=args, dynamic=True)
+        model.compile(metrics=get_model_metrics())
 
         # Create the optimizer dynamically
         if args.use_lr_scheduler is True:
@@ -139,7 +155,7 @@ if __name__ == '__main__':
             config = {'lr': args.learning_rate}
 
         config = {'class_name': str(args.optimizer),
-                  'config': config }
+                  'config': config}
 
         optimizer = tf.keras.optimizers.get(config)
 
@@ -147,14 +163,22 @@ if __name__ == '__main__':
         checkpoint = tf.train.Checkpoint(step=tf.Variable(1), optimizer=optimizer, model=model)
         checkpoint_manager = tf.train.CheckpointManager(checkpoint, run_dir, max_to_keep=args.max_checkpoints)
 
-        for epoch in range(args.num_epochs):
+        for epoch in range(1):
 
             total_loss = 0.0
             num_batches = 0
 
             # Train
             for (frames, labels) in ds_train:
+                # print("length of frames: {}".format(len(frames)))
+                print("shape of frames: {}".format(frames.shape))
+                # print("frames[0, 0, :, :]: {}".format(frames[0, :, :, :]))
+                print("length of labels: {}".format(len(labels)))
+                # print("labels: {}".format(labels))
+                # print("frames[0, 0, :, :]: {}".format(frames[0, :, :, :]))
                 total_loss += distributed_train_step((frames, labels)).numpy()
+                print("total_loss: {}".format(total_loss))
+                print()
                 checkpoint.step.assign_add(1)
                 num_batches += 1
 
@@ -174,6 +198,6 @@ if __name__ == '__main__':
             train_accuracy.reset_states()
             dev_accuracy.reset_states()
 
-            print(f'Finished epoch {epoch+1} ...')
+            print(f'Finished epoch {epoch + 1} ...')
 
     sys.exit(0)
