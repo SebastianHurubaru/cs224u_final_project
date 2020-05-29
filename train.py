@@ -10,8 +10,6 @@ import tensorflow_datasets as tfds
 import sys
 import datetime
 
-from tensorflow.python import keras
-
 from args import get_train_args
 from data_pipeline import FinancialStatementDatasetBuilder
 
@@ -90,11 +88,11 @@ if __name__ == '__main__':
 
     GLOBAL_BATCH_SIZE = args.batch_size * strategy.num_replicas_in_sync
 
-    ds_train = builder.as_dataset(split=tfds.Split.TRAIN, as_supervised=True) \
-        .map(builder._process_text_map_fn) \
+    ds_train = builder.as_dataset(split=tfds.Split.TRAIN, as_supervised=True)\
+        .map(builder._process_text_map_fn)\
         .batch(GLOBAL_BATCH_SIZE)
-    ds_dev = builder.as_dataset(split=tfds.Split.VALIDATION, as_supervised=True) \
-        .map(builder._process_text_map_fn) \
+    ds_dev = builder.as_dataset(split=tfds.Split.VALIDATION, as_supervised=True)\
+        .map(builder._process_text_map_fn)\
         .batch(GLOBAL_BATCH_SIZE)
 
     # distribute the dataset needed by the CentralStorageStrategy strategy
@@ -141,7 +139,7 @@ if __name__ == '__main__':
             config = {'lr': args.learning_rate}
 
         config = {'class_name': str(args.optimizer),
-                  'config': config}
+                  'config': config }
 
         optimizer = tf.keras.optimizers.get(config)
 
@@ -176,6 +174,6 @@ if __name__ == '__main__':
             train_accuracy.reset_states()
             dev_accuracy.reset_states()
 
-            print(f'Finished epoch {epoch + 1} ...')
+            print(f'Finished epoch {epoch+1} ...')
 
     sys.exit(0)
