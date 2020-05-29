@@ -140,6 +140,12 @@ class FinancialStatementDatasetBuilder(tfds.core.GeneratorBasedBuilder):
                     'label': label.numpy()[0]
                 }
 
+                if label.numpy()[0] == 1 and random.random() < self.args.oversampling_prob:
+                    yield cik+' ', {
+                        'documents': tf.stack(documents)[:self.args.number_of_periods],
+                        'label': label.numpy()[0]
+                    }
+
             except Exception as e:
                 print(f'Exception occurred for cik {cik}: {e}')
 
