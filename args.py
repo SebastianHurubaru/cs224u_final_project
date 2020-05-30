@@ -64,6 +64,10 @@ def get_train_args():
                         default=False,
                         help='Whether to use learn rate scheduler.')
 
+    parser.add_argument('--oversampling_prob',
+                        type=float,
+                        default=0.5,
+                        help='Oversampling probability of positive examples.')
 
     args = parser.parse_args()
 
