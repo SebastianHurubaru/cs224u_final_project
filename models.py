@@ -1,6 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Dense, LSTM, Dropout
+from tensorflow.keras import layers
 
 from transformers import TFBertModel
 
@@ -8,6 +9,35 @@ def create_model(model_name):
 
     if model_name == 'baseline':
         return BaselineModel
+    elif model_name == 'lstm':
+        return LSTMModel
+
+class LSTMModel(Model):
+
+    def __init__(self, args, **kwargs):
+        super(LSTMModel, self).__init__(kwargs)
+
+        self.args = args
+
+        self.rnn = LSTM(self.args.hidden_size)
+
+        self.out = Dense(2)
+
+        self.dropout = Dropout(self.args.drop_prob)
+
+    def call(self, x):
+        x = tf.dtypes.cast(x, tf.float32)
+        batch_size = x.shape[0]
+
+        # X needs to be a 3-dimensional tensor before we can feed it through an LSTM
+        x_reshaped = tf.reshape(x, [batch_size, -1, x.shape[-1]])
+
+        # Feed X through the LSTM
+        h = self.dropout(self.rnn(x_reshaped))
+
+        out = self.out(h)
+
+        return out
 
 class BaselineModel(Model):
 
