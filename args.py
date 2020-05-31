@@ -67,7 +67,7 @@ def get_train_args():
     parser.add_argument('--class_weights',
                         type=float,
                         nargs="*",
-                        default=[0.05, 300],
+                        default=[0.59267029, 3.19773635],
                         help='Class weights.')
 
     args = parser.parse_args()
@@ -83,6 +83,28 @@ def get_test_args():
 
     add_common_args(parser)
     add_train_test_args(parser)
+
+    args = parser.parse_args()
+
+    return args
+
+def get_setup_args():
+    """
+    Get arguments needed in setup.py.
+    """
+    parser = argparse.ArgumentParser('Setup financial statements data')
+
+    add_common_args(parser)
+
+    parser.add_argument('--test_size',
+                        type=float,
+                        default=0.1,
+                        help='Test data size as a ratio of the training data.')
+
+    parser.add_argument('--dev_size',
+                        type=float,
+                        default=0.1,
+                        help='Validation data size as a ratio of the remaining training data after splitting for test.')
 
     args = parser.parse_args()
 
