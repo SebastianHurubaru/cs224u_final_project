@@ -66,8 +66,8 @@ def periodically_train_task():
     print("Saved checkpoint for step {}: {}".format(checkpoint.step.numpy(), save_path))
 
     # Display metrics on tensorboard
-    [tf.summary.scalar(train_metric.name, train_metric.result() * 100, step=checkpoint.step.numpy()) for train_metric in
-     train_metrics]
+    tf.summary.scalar('train_loss', total_loss / num_batches, step=checkpoint.step.numpy())
+    [tf.summary.scalar(train_metric.name, train_metric.result() * 100, step=checkpoint.step.numpy()) for train_metric in train_metrics]
 
     # Print to log
     log_metrics = [f'train_loss - {total_loss / num_batches}'] + [
