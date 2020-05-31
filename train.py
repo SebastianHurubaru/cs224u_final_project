@@ -14,10 +14,16 @@ from json import dumps
 from args import get_train_args
 from data_pipeline import FinancialStatementDatasetBuilder
 
-from models import create_model
+from models import get_model
 
 from util import *
 
+
+def get_model_loss(model):
+    return MODEL_LOSS_MAP[model]
+
+def get_model_metric(model):
+    return MODEL_METRIC_MAP[model]
 
 def train_step(inputs):
     frames, labels = inputs
@@ -44,9 +50,8 @@ def eval_step(inputs):
     frames, labels = inputs
 
     predictions = model(frames, training=False)
-    t_loss = loss_object(labels, predictions)
 
-    dev_loss.update_state(t_loss)
+    dev_loss.update_state(labels, predictions)
     [dev_metric.update_state(labels, predictions) for dev_metric in dev_metrics]
 
 
@@ -112,6 +117,9 @@ if __name__ == '__main__':
         .map(builder._process_text_map_fn) \
         .batch(GLOBAL_BATCH_SIZE)
 
+    # log.info(f'Length of train dataset {generator_len(ds_train)}')
+    # log.info(f'Length of dev dataset {generator_len(ds_dev)}')
+
     # distribute the dataset needed by the CentralStorageStrategy strategy
     ds_train = strategy.experimental_distribute_dataset(dataset=ds_train)
     ds_dev = strategy.experimental_distribute_dataset(dataset=ds_dev)
@@ -119,15 +127,14 @@ if __name__ == '__main__':
     with strategy.scope():
 
         # Create model loss
-        loss_object = tf.keras.losses.BinaryCrossentropy(reduction=tf.keras.losses.Reduction.NONE)
+        loss_object = get_model_loss(args.model)(reduction=tf.keras.losses.Reduction.NONE)
 
         def compute_loss(labels, predictions, class_weights):
             per_example_loss = loss_object(labels, predictions, class_weights)
             return tf.nn.compute_average_loss(per_example_loss, global_batch_size=GLOBAL_BATCH_SIZE)
 
-
         # define the metrics
-        dev_loss = tf.keras.metrics.Mean(name='dev_loss')
+        dev_loss = get_model_metric(args.model)(name='dev_loss')
 
         train_metrics = [
             tf.keras.metrics.CategoricalAccuracy(name='train_accuracy'),
@@ -148,7 +155,7 @@ if __name__ == '__main__':
         ]
 
         # Create the model, optimizer and checkpoint under 'strategy_scope'
-        model = create_model(args.model)(args=args, dynamic=True)
+        model = get_model(args.model)(args=args, dynamic=True)
 
         # Create the optimizer dynamically
         if args.use_lr_scheduler is True:
