@@ -48,7 +48,9 @@ class FinancialStatementDatasetBuilder(tfds.core.GeneratorBasedBuilder):
                 "documents": tfds.features.Tensor(
                     dtype=tf.string, shape=(self.args.number_of_periods,)
                 ),
-                "label": tfds.features.ClassLabel(num_classes=2),
+                "label": tfds.features.Tensor(
+                    dtype=tf.int64, shape=(2,)
+                )
             }),
 
             supervised_keys=("documents", "label"),
@@ -137,14 +139,8 @@ class FinancialStatementDatasetBuilder(tfds.core.GeneratorBasedBuilder):
 
                 yield cik, {
                     'documents': tf.stack(documents)[:self.args.number_of_periods],
-                    'label': label.numpy()[0]
+                    'label': [1, 0] if label.numpy()[0] == 0 else [0, 1]
                 }
-
-                if label.numpy()[0] == 1 and random.random() < self.args.oversampling_prob:
-                    yield cik+' ', {
-                        'documents': tf.stack(documents)[:self.args.number_of_periods],
-                        'label': label.numpy()[0]
-                    }
 
             except Exception as e:
                 print(f'Exception occurred for cik {cik}: {e}')

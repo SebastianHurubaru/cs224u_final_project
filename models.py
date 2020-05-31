@@ -21,7 +21,7 @@ class LSTMModel(Model):
 
         self.rnn = LSTM(self.args.hidden_size)
 
-        self.out = Dense(2)
+        self.out = Dense(2, activation='softmax')
 
         self.dropout = Dropout(self.args.drop_prob)
 
@@ -52,7 +52,7 @@ class BaselineModel(Model):
 
         self.rnn = LSTM(self.args.hidden_size)
 
-        self.out = Dense(2)
+        self.out = Dense(2, activation='softmax')
 
         self.dropout = Dropout(self.args.drop_prob)
 
@@ -72,7 +72,7 @@ class BaselineModel(Model):
 
         # Do an average pooling of the word embeddings to get the sentence embeddings
         sentence_embeddings = tf.reduce_mean(context_embeddings, axis=-2)
-        sent_emb_reshaped = tf.reshape(sentence_embeddings, [batch_size, -1, self.bert_model.config.max_length])
+        sent_emb_reshaped = tf.reshape(sentence_embeddings, [batch_size, -1, self.bert_model.config.hidden_size])
         h = self.dropout(self.rnn(sent_emb_reshaped))
 
         out = self.out(h)

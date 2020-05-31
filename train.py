@@ -9,6 +9,7 @@ import tensorflow_datasets as tfds
 
 import sys
 import datetime
+from json import dumps
 
 from args import get_train_args
 from data_pipeline import FinancialStatementDatasetBuilder
@@ -21,18 +22,20 @@ from util import *
 def train_step(inputs):
     frames, labels = inputs
 
+    idx = tf.stack([tf.reshape(tf.range(labels.shape[0], dtype=tf.int64), (-1, 1)),
+                    tf.reshape(tf.argmax(labels, axis=1), (-1, 1))],
+                   axis=-1)
+    class_weights = tf.gather_nd(tf.convert_to_tensor([args.class_weights] * labels.shape[0]),
+                                 indices=idx)
+
     with tf.GradientTape() as tape:
         predictions = model(frames, training=True)
-        loss = compute_loss(labels, predictions)
+        loss = compute_loss(labels, predictions, class_weights)
 
     gradients = tape.gradient(loss, model.trainable_variables)
     optimizer.apply_gradients(zip(gradients, model.trainable_variables))
-    prediction_indexes = tf.argmax(predictions, axis=1).numpy()
 
-    train_accuracy.update_state(labels, predictions)
-    train_recall.update_state(labels, prediction_indexes)
-    train_precision.update_state(labels, prediction_indexes)
-    train_auc.update_state(labels, prediction_indexes)
+    [train_metric.update_state(labels, predictions) for train_metric in train_metrics]
 
     return loss
 
@@ -41,14 +44,10 @@ def eval_step(inputs):
     frames, labels = inputs
 
     predictions = model(frames, training=False)
-    prediction_indexes = tf.argmax(predictions, axis=1).numpy()
     t_loss = loss_object(labels, predictions)
 
     dev_loss.update_state(t_loss)
-    dev_accuracy.update_state(labels, predictions)
-    dev_recall.update_state(labels, prediction_indexes)
-    dev_precision.update_state(labels, prediction_indexes)
-    dev_auc.update_state(labels, prediction_indexes)
+    [dev_metric.update_state(labels, predictions) for dev_metric in dev_metrics]
 
 
 def distributed_train_step(dataset_inputs):
@@ -67,11 +66,13 @@ def periodically_train_task():
     print("Saved checkpoint for step {}: {}".format(checkpoint.step.numpy(), save_path))
 
     # Display metrics on tensorboard
-    tf.summary.scalar('train_loss', total_loss / num_batches, step=checkpoint.step.numpy())
-    tf.summary.scalar('train_accuracy', train_accuracy.result() * 100, step=checkpoint.step.numpy())
-    tf.summary.scalar('train_recall', train_recall.result() * 100, step=checkpoint.step.numpy())
-    tf.summary.scalar('train_precision', train_precision.result() * 100, step=checkpoint.step.numpy())
-    tf.summary.scalar('train_auc', train_auc.result() * 100, step=checkpoint.step.numpy())
+    [tf.summary.scalar(train_metric.name, train_metric.result() * 100, step=checkpoint.step.numpy()) for train_metric in
+     train_metrics]
+
+    # Print to log
+    log_metrics = [f'train_loss - {total_loss / num_batches}'] + [
+        f'{train_metric.name} - {train_metric.result().numpy()})' for train_metric in train_metrics]
+    log.info(f'Training step - {checkpoint.step.numpy()} ' + ', '.join(log_metrics))
 
 
 if __name__ == '__main__':
@@ -84,6 +85,11 @@ if __name__ == '__main__':
 
     # Setup the output dir
     run_dir = args.save_dir + '_' + args.name + '_' + datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    writer = tf.summary.create_file_writer(run_dir)
+    writer.set_as_default()
+
+    log = get_logger(run_dir, args.name)
+    log.info(f'Args: {dumps(vars(args), indent=4, sort_keys=True)}')
 
     # Setup the frames data
     builder = FinancialStatementDatasetBuilder(args=args)
@@ -99,53 +105,47 @@ if __name__ == '__main__':
 
     GLOBAL_BATCH_SIZE = args.batch_size * strategy.num_replicas_in_sync
 
-    ds_train = builder.as_dataset(split=tfds.Split.TRAIN, as_supervised=True)\
-        .map(builder._process_text_map_fn)\
+    ds_train = builder.as_dataset(split=tfds.Split.TRAIN, as_supervised=True) \
+        .map(builder._process_text_map_fn) \
         .batch(GLOBAL_BATCH_SIZE)
-    ds_dev = builder.as_dataset(split=tfds.Split.VALIDATION, as_supervised=True)\
-        .map(builder._process_text_map_fn)\
+    ds_dev = builder.as_dataset(split=tfds.Split.VALIDATION, as_supervised=True) \
+        .map(builder._process_text_map_fn) \
         .batch(GLOBAL_BATCH_SIZE)
 
     # distribute the dataset needed by the CentralStorageStrategy strategy
     ds_train = strategy.experimental_distribute_dataset(dataset=ds_train)
     ds_dev = strategy.experimental_distribute_dataset(dataset=ds_dev)
 
-    writer = tf.summary.create_file_writer(run_dir)
-    writer.set_as_default()
-
     with strategy.scope():
 
         # Create model loss
-        loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True,
-                                                                    reduction=tf.keras.losses.Reduction.NONE)
+        loss_object = tf.keras.losses.BinaryCrossentropy(reduction=tf.keras.losses.Reduction.NONE)
 
-
-        def compute_loss(labels, predictions):
-            per_example_loss = loss_object(labels, predictions)
+        def compute_loss(labels, predictions, class_weights):
+            per_example_loss = loss_object(labels, predictions, class_weights)
             return tf.nn.compute_average_loss(per_example_loss, global_batch_size=GLOBAL_BATCH_SIZE)
 
 
         # define the metrics
         dev_loss = tf.keras.metrics.Mean(name='dev_loss')
 
-        train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
-            name='train_accuracy')
-        train_recall = tf.keras.metrics.Recall(
-            name='train_recall')
-        train_precision = tf.keras.metrics.Precision(
-            name='train_precision')
-        train_auc = tf.keras.metrics.AUC(
-            name='train_auc')
+        train_metrics = [
+            tf.keras.metrics.CategoricalAccuracy(name='train_accuracy'),
+            tf.keras.metrics.Recall(name='train_recall_class_0', class_id=0),
+            tf.keras.metrics.Recall(name='train_recall_class_1', class_id=1),
+            tf.keras.metrics.Precision(name='train_precision_class_0', class_id=0),
+            tf.keras.metrics.Precision(name='train_precision_class_1', class_id=1),
+            tf.keras.metrics.AUC(name='train_auc')
+        ]
 
-        dev_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
-            name='dev_accuracy')
-        dev_recall = tf.keras.metrics.Recall(
-            name='dev_recall')
-        dev_precision = tf.keras.metrics.Precision(
-            name='dev_precision')
-        dev_auc = tf.keras.metrics.AUC(
-            name='dev_auc'
-        )
+        dev_metrics = [
+            tf.keras.metrics.CategoricalAccuracy(name='dev_accuracy'),
+            tf.keras.metrics.Recall(name='dev_recall_class_0', class_id=0),
+            tf.keras.metrics.Recall(name='dev_recall_class_1', class_id=1),
+            tf.keras.metrics.Precision(name='dev_precision_class_0', class_id=0),
+            tf.keras.metrics.Precision(name='dev_precision_class_1', class_id=1),
+            tf.keras.metrics.AUC(name='dev_auc')
+        ]
 
         # Create the model, optimizer and checkpoint under 'strategy_scope'
         model = create_model(args.model)(args=args, dynamic=True)
@@ -153,18 +153,18 @@ if __name__ == '__main__':
         # Create the optimizer dynamically
         if args.use_lr_scheduler is True:
             config = {'learning_rate': tf.keras.optimizers.schedules.serialize(
-                    tf.keras.optimizers.schedules.ExponentialDecay(
-                        initial_learning_rate=args.learning_rate,
-                        decay_rate=args.decay_rate,
-                        decay_steps=args.decay_steps
-                    )
+                tf.keras.optimizers.schedules.ExponentialDecay(
+                    initial_learning_rate=args.learning_rate,
+                    decay_rate=args.decay_rate,
+                    decay_steps=args.decay_steps
                 )
+            )
             }
         else:
             config = {'lr': args.learning_rate}
 
         config = {'class_name': str(args.optimizer),
-                  'config': config }
+                  'config': config}
 
         optimizer = tf.keras.optimizers.get(config)
 
@@ -193,22 +193,17 @@ if __name__ == '__main__':
                 distributed_eval_step((frames, labels))
 
             tf.summary.scalar('dev_loss', dev_loss.result(), step=checkpoint.step.numpy())
-            tf.summary.scalar('dev_accuracy', dev_accuracy.result() * 100, step=checkpoint.step.numpy())
-            tf.summary.scalar('dev_recall', dev_recall.result() * 100, step=checkpoint.step.numpy())
-            tf.summary.scalar('dev_precision', dev_precision.result() * 100, step=checkpoint.step.numpy())
-            tf.summary.scalar('dev_auc', dev_auc.result() * 100, step=checkpoint.step.numpy())
+            [tf.summary.scalar(dev_metric.name, dev_metric.result() * 100, step=checkpoint.step.numpy()) for dev_metric
+             in dev_metrics]
+
+            # Print to log
+            log_metrics = [f'dev_loss - {dev_loss.result().numpy()}'] + [
+                f'{dev_metric.name} - {dev_metric.result().numpy()})' for dev_metric in dev_metrics]
+            log.info(f'Training step - {checkpoint.step.numpy()} ' + ', '.join(log_metrics))
 
             dev_loss.reset_states()
-            train_accuracy.reset_states()
-            train_recall.reset_states()
-            train_precision.reset_states()
-            train_auc.reset_states()
+            [metric.reset_states() for metric in train_metrics + dev_metrics]
 
-            dev_accuracy.reset_states()
-            dev_recall.reset_states()
-            dev_precision.reset_states()
-            dev_auc.reset_states()
-
-            print(f'Finished epoch {epoch+1} ...')
+            print(f'Finished epoch {epoch + 1} ...')
 
     sys.exit(0)
