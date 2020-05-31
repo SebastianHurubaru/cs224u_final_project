@@ -22,9 +22,10 @@ from text_processors import TextProcessor, SentenceBasedTextProcessor
 
 class FinancialStatementDatasetBuilder(tfds.core.GeneratorBasedBuilder):
 
-    def __init__(self, args):
+    def __init__(self, args, log):
 
         self.args = args
+        self.log = log
 
         self.VERSION = tfds.core.Version(self.args.dataset_version)
         self.MANUAL_DOWNLOAD_INSTRUCTIONS = "Dataset already downloaded manually"
@@ -143,7 +144,7 @@ class FinancialStatementDatasetBuilder(tfds.core.GeneratorBasedBuilder):
                 }
 
             except Exception as e:
-                print(f'Exception occurred for cik {cik}: {e}')
+                self.log.error(f'Exception occurred for cik {cik}: {e}')
 
     def _process_text_map_fn(self, text, label):
         processed_text, label = tf.py_function(self._process_text,

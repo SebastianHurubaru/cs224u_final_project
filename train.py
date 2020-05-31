@@ -92,7 +92,7 @@ if __name__ == '__main__':
     log.info(f'Args: {dumps(vars(args), indent=4, sort_keys=True)}')
 
     # Setup the frames data
-    builder = FinancialStatementDatasetBuilder(args=args)
+    builder = FinancialStatementDatasetBuilder(args=args, log=log)
     builder.download_and_prepare(
         download_config=tfds.download.DownloadConfig(
             download_mode=tfds.core.download.GenerateMode.REUSE_DATASET_IF_EXISTS,
