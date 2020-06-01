@@ -149,7 +149,7 @@ class FinancialStatementDatasetBuilder(tfds.core.GeneratorBasedBuilder):
     def _process_text_map_fn(self, text, label):
         processed_text, label = tf.py_function(self._process_text,
                                                inp=[text, label],
-                                               Tout=(tf.float64, tf.int64))
+                                               Tout=(tf.float32, tf.int64))
         return processed_text, label
 
     def _process_text(self, text, label):
