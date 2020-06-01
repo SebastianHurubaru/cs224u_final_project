@@ -15,16 +15,17 @@ from sec_edgar_downloader import Downloader
 import tensorflow_datasets.public_api as tfds
 
 from parsers import FinancialReportParserUsingEdgar
-from text_processors import TextProcessor, SentenceBasedTextProcessor
+from text_processors import get_text_processor
 
 #for debugging
 # import pydevd
 
 class FinancialStatementDatasetBuilder(tfds.core.GeneratorBasedBuilder):
 
-    def __init__(self, args):
+    def __init__(self, args, log):
 
         self.args = args
+        self.log = log
 
         self.VERSION = tfds.core.Version(self.args.dataset_version)
         self.MANUAL_DOWNLOAD_INSTRUCTIONS = "Dataset already downloaded manually"
@@ -35,7 +36,7 @@ class FinancialStatementDatasetBuilder(tfds.core.GeneratorBasedBuilder):
 
         self.parser = FinancialReportParserUsingEdgar()
         
-        self.text_processor = SentenceBasedTextProcessor(args)
+        self.text_processor = get_text_processor(args.model)(args)
 
     def _info(self):
 
@@ -48,7 +49,9 @@ class FinancialStatementDatasetBuilder(tfds.core.GeneratorBasedBuilder):
                 "documents": tfds.features.Tensor(
                     dtype=tf.string, shape=(self.args.number_of_periods,)
                 ),
-                "label": tfds.features.ClassLabel(num_classes=2),
+                "label": tfds.features.Tensor(
+                    dtype=tf.int64, shape=(2,)
+                )
             }),
 
             supervised_keys=("documents", "label"),
@@ -137,22 +140,16 @@ class FinancialStatementDatasetBuilder(tfds.core.GeneratorBasedBuilder):
 
                 yield cik, {
                     'documents': tf.stack(documents)[:self.args.number_of_periods],
-                    'label': label.numpy()[0]
+                    'label': [1, 0] if label.numpy()[0] == 0 else [0, 1]
                 }
 
-                if label.numpy()[0] == 1 and random.random() < self.args.oversampling_prob:
-                    yield cik+' ', {
-                        'documents': tf.stack(documents)[:self.args.number_of_periods],
-                        'label': label.numpy()[0]
-                    }
-
             except Exception as e:
-                print(f'Exception occurred for cik {cik}: {e}')
+                self.log.error(f'Exception occurred for cik {cik}: {e}')
 
     def _process_text_map_fn(self, text, label):
         processed_text, label = tf.py_function(self._process_text,
                                                inp=[text, label],
-                                               Tout=(tf.int64, tf.int64))
+                                               Tout=(tf.float32, tf.int64))
         return processed_text, label
 
     def _process_text(self, text, label):

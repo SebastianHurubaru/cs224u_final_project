@@ -1,16 +1,24 @@
-
-
 import re
 import os
+import numpy as np
 import tensorflow as tf
 
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize, sent_tokenize
 from nltk.tokenize import RegexpTokenizer
+
+
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.preprocessing import FunctionTransformer
+
 import re
 
 from transformers import BertTokenizer
 
+from utils import glove2dict
+
+def get_text_processor(model_name):
+	return TEXT_PROC_MODEL_MAP[model_name]
 
 class TextProcessor(object):
 
@@ -33,7 +41,6 @@ class TextProcessor(object):
 
 		processed_text = self._process_text(decoded_text)
 
-		# TODO - additional text processing
 		return processed_text
 
 	def _process_text(self, text: str) -> str:
@@ -50,22 +57,43 @@ class TextProcessor(object):
 		return " ".join(processed_text).lower()
 
 
-	def get_token_counts(self, text: str) -> dict:
-		"""
-		Helper function for getting the individual token 
-		counts (word frequency) from a str of text.
+class Log1PTextProcessor(TextProcessor):
 
-		"""
-		token_counts = dict()
-		tokens = text.split()
+	def __init__(self, args):
 
-		for token in tokens:
-			if token in token_counts:
-				token_counts[token] += 1
-			else:
-				token_counts[token] = 1
+		super().__init__(args)
 
-		return sorted(token_counts.items(), key=lambda x:x[1], reverse=True)
+		GLOVE = glove2dict(os.path.join(args.input_dir, 'glove.6B', 'glove.6B.50d.txt'))
+
+		self.dict = [key for key, _ in GLOVE.items()]
+
+	def process_text(self, text: tf.Tensor) -> tf.Tensor:
+
+		# Convert tensor to a single document
+		corpus = ''
+		for doc_index in range(self.args.number_of_periods):
+			corpus += text[doc_index].numpy().decode('utf-8', 'ignore')
+
+		# Get the word counts
+		vectorizer = CountVectorizer()
+		word_counts = vectorizer.fit_transform([corpus])
+
+		# Apply the Log1P transformation
+		transformer = FunctionTransformer(np.log1p)
+		log1p_features = transformer.transform(word_counts.toarray())[0]
+
+		# Get the word names in the right order and get rid of all digit sequences/numbers
+		documents_words = [feature.lower() for feature in vectorizer.get_feature_names() if
+						   feature.isnumeric() is False and
+						   any(char.isdigit() for char in feature) is False and
+						   feature in self.dict]
+
+		output = [0.] * len(self.dict)
+		for word_index, word in enumerate(documents_words):
+			output[self.dict.index(word)] = log1p_features[word_index]
+
+		return output
+
 
 class SentenceBasedTextProcessor(TextProcessor):
 
@@ -117,4 +145,8 @@ class SentenceBasedTextProcessor(TextProcessor):
 		return output
 
 
+
+TEXT_PROC_MODEL_MAP = {
+	'baseline': Log1PTextProcessor
+}
 
