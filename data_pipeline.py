@@ -7,14 +7,12 @@ Author:
 
 import tensorflow as tf
 
-import numpy as np
 import os
-import json
 from sec_edgar_downloader import Downloader
 
 import tensorflow_datasets.public_api as tfds
 
-from parsers import FinancialReportParserUsingEdgar
+from parsers import FinancialReportParser
 from text_processors import get_text_processor
 
 #for debugging
@@ -34,8 +32,7 @@ class FinancialStatementDatasetBuilder(tfds.core.GeneratorBasedBuilder):
 
         self.dl = Downloader(self.args.download_path)
 
-        self.parser = FinancialReportParserUsingEdgar()
-        
+        self.parser = FinancialReportParser()
         self.text_processor = get_text_processor(args.model)(args)
 
     def _info(self):

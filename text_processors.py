@@ -15,7 +15,7 @@ import re
 
 from transformers import BertTokenizer
 
-from utils import glove2dict
+from util import glove2dict
 
 def get_text_processor(model_name):
 	return TEXT_PROC_MODEL_MAP[model_name]
