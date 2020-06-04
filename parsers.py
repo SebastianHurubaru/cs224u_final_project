@@ -8,6 +8,19 @@ from lxml import html
 from edgar import Edgar, TXTML, Company
 
 
+class TXTMLExtended(TXTML):
+
+    @classmethod
+    def parse_full_10K(cls, doc):
+        text = ""
+        for child in doc.getchildren():
+            if child.tag == 'sec-header':
+                continue
+            html, properties = TXTML.get_HTML_from_document(child)
+            if re.search('10[-]*[KQ]', properties['type']):
+                text = text + html.text_content()
+        return text
+
 class FinancialReportParser(object):
 
     def parse_10K_txt_file(self, txt_file_path: str, should_parse_item_7_only: bool = True) -> str:
@@ -29,6 +42,9 @@ class FinancialReportParser(object):
             raw_10K_html_text = f.read()
 
         try:
+            # Have the document start with the <SEC-DOCUMENT> tag
+            raw_10K_html_text = raw_10K_html_text[raw_10K_html_text.find('<DOCUMENT>'):raw_10K_html_text.find(
+                '</DOCUMENT>') + len('</DOCUMENT>')]
             # Try to parse the full HTML with the edgar library
             raw_10K_text = self.parse_full_10K_edgar(html.fromstring(raw_10K_html_text))
         except Exception as e:
@@ -54,14 +70,25 @@ class FinancialReportParser(object):
         max_size = 0
         raw_7K_text = ''
 
-        pattern = '[\\n\\r\\s]+(Item[\\n\\r\\s]?7\\..+?)[\\n\\r\\s]+Item[\\n\\r\\s]?8\\.'
+        pattern = '[\\n\\r\\s]*(Item[\\n\\r\\s\\.]*[67][\\.\\n\\r\\s\\-]+Management.+?)[\\n\\r\\s]*Item[\\n\\r\\s\\.]*[89][\\.\\n\\r\\s\\-]+'
         for x in re.finditer(pattern, raw_10K_text, flags=re.S | re.IGNORECASE):
             if len(x.group(1)) > max_size:
                 raw_7K_text = x.group(1)
                 max_size = len(x.group(1))
 
+        # Use a new more specialized RegEx.
+        if not raw_7K_text:
+            pattern = '[\\n\\r\\s]+(ITEM[\\n\\r\\s]*7[\\n\\r\\s\\:]+MANAGEMENT.+?)[\\n\\r\\s]+ITEM[\\n\\r\\s]*[89][\\n\\r\\s\\:]+'
+            for x in re.finditer(pattern, raw_10K_text, flags=re.S | re.IGNORECASE):
+                if len(x.group(1)) > max_size:
+                    raw_7K_text = x.group(1)
+                    max_size = len(x.group(1))
+
         if not raw_7K_text:
             raise Exception(f'7K section is empty!')
+
+        if len(raw_7K_text) < 1000:
+            raise Exception(f'7K section is too small. Assuming it is referenced. 7K section: {raw_7K_text}')
 
         return raw_7K_text
 
@@ -70,7 +97,7 @@ class FinancialReportParser(object):
         Parses the raw `raw_10K_html_text` using Edgar and
         returns the entire 10-K content.
         """
-        parsed_full_10K = TXTML.parse_full_10K(raw_10K_html_text)
+        parsed_full_10K = TXTMLExtended.parse_full_10K(raw_10K_html_text)
 
         return parsed_full_10K
 
